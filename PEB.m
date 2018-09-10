@@ -10,6 +10,12 @@ classdef PEB < handle
         Nx
         Ng
         Tx
+        defaultOptions = struct(...
+            'maxIter',100,...   % Maximum number of iterations
+            'verbose',true,...  % Produce per-iteration prints
+            'maxTol',1e-1,...   % Maximum tolerance of logE change
+            'bufferSize',100,...% History buffer size
+            'gammaMin',1);      % Minimum gamma allowed in the first stage  
     end
     properties(GetAccess=private)
         Iy
@@ -33,8 +39,8 @@ classdef PEB < handle
                 Di = Delta(blocks(:,k),blocks(:,k));
                 
                 % Per-block covariance matrix
-                nz = sum(blocks(:,k));
                 sqCi{k} = inv(Di);
+                sqCi{k} = sqCi{k}/norm(sqCi{k},'fro');
                 ind(blocks(:,k),blocks(:,k)) = 1;
                 Citmp = sqCi{k}*sqCi{k}';
                 obj.Ci(ind==1,k) = Citmp(:);
@@ -61,16 +67,15 @@ classdef PEB < handle
         end
         
         %%
-        function [lambda, gamma, history] = learning(obj,Y,options)
-            if nargin < 3
-                options = struct(...
-                    'maxIter',100,...    % Maximum number of iterations
-                    'verbose',true,...  % Produce per-iteration prints
-                    'maxTol',1e-3,...   % Maximum tolerance of logE change
-                    'bufferSize',100);  % History buffer size
+        function [lambda, gamma, gamma_F, history] = learning(obj,Y,lambda0, gamma0,options)
+            if nargin < 4
+                [lambda0, gamma0] = initHyperparameters(obj, Y);
             end
-            [lambda, gamma, history] = optimizeFullModel(obj,Y,options);
-            [gamma,history]          = pruning(obj,Y,lambda,gamma,history,options);
+            if nargin < 5
+                options = obj.defaultOptions;
+            end
+            [lambda, gamma, gamma_F, history] = optimizeFullModel(obj,Y,lambda0, gamma0, options);
+            [gamma,history]                   = pruning(obj,Y,lambda,gamma,history,options);
             
             Sx = obj.Ci*gamma;
             Sx = sparse(reshape(Sx,obj.Nx,obj.Nx));
@@ -84,21 +89,38 @@ classdef PEB < handle
         end
         
         %%
-        function [lambda, gamma, history] = optimizeFullModel(obj,Y,options)
-            UtY = obj.Ut*Y;
-            UtY2 = UtY.^2;
+        function [X,lambda, gamma_F, gamma] = update(obj,Y,lambda0,gamma0,options)
+            if nargin < 4
+                [lambda0, gamma0] = initHyperparameters(obj, Y);
+            end
+            if nargin < 5
+                options = obj.defaultOptions;
+            end
+            [lambda, gamma, gamma_F] = learning(obj,Y,lambda0, gamma0,options);
+            if sum(gamma) < 50
+                disp('kk')
+            end
+            X = inference(obj, Y);
+        end
+    end
+    methods(Access=private)
+        %%
+        function [lambda0, gamma0] = initHyperparameters(obj, Y)
+            UtY2 = (obj.Ut*Y).^2;
+            S = [obj.s2 obj.s2*0+1];
+            phi = abs(mean((S'*S)\(S'*UtY2),2));
+            gamma0  = phi(1);
+            lambda0 = phi(2);
+        end
+        %%
+        function [lambda, gamma, gamma_F, history] = optimizeFullModel(obj,Y,lambda0, gamma0, options)
+            UtY2 = (obj.Ut*Y).^2;
             Nt = size(Y,2);
             Cy = Y*Y'/Nt;
             gamma = ones(obj.Ng,1);
-            
-            %----------------------------------
-            % LS initialization
-            S = [obj.s2 obj.s2*0+1];
-            phi = mean((S'*S)\(S'*UtY2),2);
-            gamma_F  = phi(1);
-            lambda   = phi(2);
+            lambda = lambda0;
+            gamma_F = gamma0;
             gamma(:) = gamma_F;
-            %----------------------------------
             
             history = struct('lambda',nan(options.bufferSize,1),'gamma_F',nan(options.bufferSize,1),'logE',nan(options.bufferSize,1),'pointer',1);
             history.lambda(1)  = lambda;
@@ -111,6 +133,7 @@ classdef PEB < handle
                 
                 lambda   = lambda *sum(mean(bsxfun(@times,UtY2,     1./psi2),2))/(eps+sum(     1./psi));
                 gamma_F  = gamma_F*sum(mean(bsxfun(@times,UtY2,obj.s2./psi2),2))/(eps+sum(obj.s2./psi));
+                gamma_F(gamma_F<options.gammaMin) = options.gammaMin;
                 gamma(:) = gamma_F;
                 
                 history.logE(k) = calculateLogEvidence(obj,Cy,lambda,gamma);
@@ -121,7 +144,7 @@ classdef PEB < handle
                 end
                 
                 % Check convergence and exit condition
-                if abs(diff(fliplr(history.logE(k-1:k)))) < options.maxTol && k>5, break;end
+                if diff(history.logE(k-1:k)) < options.maxTol, break;end
             end
             history.pointer = k;
         end
@@ -143,9 +166,10 @@ classdef PEB < handle
                 history.pointer = history.pointer+1;
                 history.logE(history.pointer) = calculateLogEvidence(obj,Cy,lambda,gamma);
                 if options.verbose
-                    fprintf('%i => diff(logE): %.4g   logE: %.5g   Sum Gamma: %.4g\n',history.pointer,abs(-diff(...
-                        history.logE(history.pointer-1:history.pointer))),history.logE(history.pointer),sum(nonzeros(gamma)));
+                    fprintf('%i => diff(logE): %.4g   logE: %.5g   Sum Gamma: %.4g\n',history.pointer,diff(...
+                        history.logE(history.pointer-1:history.pointer)),history.logE(history.pointer),sum(nonzeros(gamma)));
                 end
+                if diff(history.logE(history.pointer-1:history.pointer)) < options.maxTol, break;end
             end
         end
         
