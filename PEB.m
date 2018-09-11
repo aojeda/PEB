@@ -11,11 +11,12 @@ classdef PEB < handle
         Ng
         Tx
         defaultOptions = struct(...
-            'maxIter',100,...   % Maximum number of iterations
-            'verbose',true,...  % Produce per-iteration prints
-            'maxTol',1e-1,...   % Maximum tolerance of logE change
-            'bufferSize',100,...% History buffer size
-            'gammaMin',1);      % Minimum gamma allowed in the first stage  
+            'maxIter',100,...       % Maximum number of iterations
+            'verbose',true,...      % Produce per-iteration prints
+            'maxTol',1e-1,...       % Maximum tolerance of logE change
+            'bufferSize',100,...    % History buffer size
+            'gammaMin',1,...        % Minimum gamma allowed in the first stage  
+            'doPruning','true');    % Enable the pruning stage      
     end
     properties(GetAccess=private)
         Iy
@@ -74,9 +75,13 @@ classdef PEB < handle
             if nargin < 5
                 options = obj.defaultOptions;
             end
+            if ~isfield(options,'doPruning')
+                options.doPruning = true;
+            end
             [lambda, gamma, gamma_F, history] = optimizeFullModel(obj,Y,lambda0, gamma0, options);
-            [gamma,history]                   = pruning(obj,Y,lambda,gamma,history,options);
-            
+            if options.doPruning
+                [gamma,history] = pruning(obj,Y,lambda,gamma,history,options);
+            end
             Sx = obj.Ci*gamma;
             Sx = sparse(reshape(Sx,obj.Nx,obj.Nx));
             [~, iSy] = obj.calculateModelCov(lambda,gamma);
@@ -91,15 +96,16 @@ classdef PEB < handle
         %%
         function [X,lambda, gamma_F, gamma] = update(obj,Y,lambda0,gamma0,options)
             if nargin < 4
+                lambda0 = []; 
+                gamma0 = [];
+            end
+            if isempty(lambda0) || isempty(gamma0)
                 [lambda0, gamma0] = initHyperparameters(obj, Y);
             end
             if nargin < 5
                 options = obj.defaultOptions;
             end
             [lambda, gamma, gamma_F] = learning(obj,Y,lambda0, gamma0,options);
-            if sum(gamma) < 50
-                disp('kk')
-            end
             X = inference(obj, Y);
         end
     end

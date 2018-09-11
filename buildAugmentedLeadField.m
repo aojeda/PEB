@@ -11,20 +11,21 @@ function [H, Delta, blocks, indG, indV] = buildAugmentedLeadField(hm, M, chanloc
 %   indG are the indices of the brain sources
 %   indV are the indices of the artifact sources
 
-xyz =  [[chanlocs.X]'  [chanlocs.Y]'  [chanlocs.Z]'];
+% xyz =  [[chanlocs.X]'  [chanlocs.Y]'  [chanlocs.Z]'];
 labels  = {chanlocs.labels};
-[~, ~, loc2] = intersect(hm.labels, labels,'stable');
+[~, loc1, loc2] = intersect(hm.labels, labels,'stable');
 [Ny,Ng] = size(hm.K);
 Nic = size(M,2);
 Nroi = length(hm.atlas.label);
 A = zeros(Ny,Nic);
 for ic=1:Nic
-    F = scatteredInterpolant(xyz(loc2,:),M(loc2,ic));
+    F = scatteredInterpolant(hm.channelSpace(loc1,:),M(loc2,ic),'linear','none');
+    % F = scatteredInterpolant(xyz(loc2,:),M(loc2,ic),'linear','none');
     A(:,ic) = F(hm.channelSpace);
 end
 norm_K = norm(hm.K);
 L = hm.K/norm_K;
-Delta = hm.L/norm_K;
+Delta = blkdiag(hm.L/norm_K,eye(Nic));
 H = [L A];
 H = bsxfun(@rdivide,H,sqrt(sum(H.^2)));
 blocks = hm.indices4Structure(hm.atlas.label);
