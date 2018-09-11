@@ -1,8 +1,27 @@
 function EEG = pop_inverseSolution(EEG, windowSize, saveFull, solverType, postprocCallback)
 if nargin < 1, error('Not enough input arguments.');end
-if nargin < 2, windowSize = (40/1000)*EEG.srate;end
-if nargin < 3, saveFull = true;end
-if nargin < 4, solverType = 'bsbl';end
+if nargin < 4
+    answer = inputdlg({'Window size','Save full PCD', 'Solver type'},'pop_inverseSolution',1,{num2str((40/1000)*EEG.srate),'true', 'bsbl'});
+    if isempty(answer)
+        error('Not enough input arguments.');
+    else
+        windowSize = str2double(answer{1});
+        if isempty(windowSize)
+            disp('Invalid input for windowSize parameter, we will use the default value.')
+            windowSize= (40/1000)*EEG.srate;
+        end
+        saveFull = str2num(lower(answer{2})); %#ok
+        if isempty(saveFull)
+            disp('Invalid input for saveFull parameter, we will use the default value.')
+            saveFull= true;
+        end
+        solverType = lower(answer{3});
+        if ~any(ismember({'loreta','bsbl'},solverType))
+            disp(['Solver ' solverType 'is not available, we will use bsbl.']);
+            solverType = 'bsbl';
+        end
+    end
+end
 if nargin < 5, postprocCallback = [];end
 
 % Load the head model
@@ -27,8 +46,8 @@ EEG = pop_select(EEG,'channel',loc);
 
 % Initialize the inverse solver
 Ndipoles = size(hm.cortex.vertices,1);
-if exist('artifact_dictionary.mat','file')
-    load('artifact_dictionary.mat');
+if exist('Artifact_dictionary.mat','file')
+    load('Artifact_dictionary.mat');
     [H, Delta, blocks, indG, indV] = buildAugmentedLeadField(hm, A, chanlocs);
 else
     norm_K = norm(hm.K);
@@ -82,15 +101,11 @@ else
     isVect = false;
 end
 
-if ~isempty(indV)
-    P = [P zeros(size(P,1),length(indV))];
-end
-
+halfWindow = ceil(windowSize/2);
 prc_5 = round(linspace(1,EEG.pnts,30));
 iterations = 1:halfWindow:EEG.pnts-windowSize;
 prc_10 = iterations(round(linspace(1,length(iterations),10)));
 
-halfWindow = ceil(windowSize/2);
 windowSize=max([5,windowSize]);
 windowSize = 2*round(windowSize/2);
 smoothing = hanning(windowSize);
@@ -110,8 +125,8 @@ for trial=1:EEG.trials
         loc(loc>EEG.pnts) = [];
         if isempty(loc), break;end
         if length(loc) < windowSize
-            X(:,loc,trial) = solver.update(EEG.data(:,loc,trial), [],[],options);
-            X_roi(:,loc,trial) = P*X(:,loc,trial);
+            X(:,loc(1):end,trial) = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
+            X_roi(:,loc(1):end,trial) = computeSourceROI(X(indG,loc(1):end,trial),P,isVect);
             break;
         end
         
@@ -127,7 +142,7 @@ for trial=1:EEG.trials
         end
         
         % Compute average ROI time series
-        X_roi(:,loc,trial) = computeSourceROI(X(:,loc,trial),P,isVect);
+        X_roi(:,loc,trial) = computeSourceROI(X(indG,loc,trial),P,isVect);
         
         % Post-processing (if any)
         if ~isempty(postprocCallback)
@@ -160,7 +175,7 @@ if saveFull
 else
     EEG.etc.src.actFull = [];
 end
-EEG.history = char(EEG.history,'EEG = pop_inverseSolution(EEG, windowSize, saveFull);');
+EEG.history = char(EEG.history,['EEG = pop_inverseSolution(EEG, ' num2str(windowSize) ', ' num2str(saveFull) ', ' solverType ');']);
 disp('The source estimates were saved in EEG.etc.src');
 end
 
