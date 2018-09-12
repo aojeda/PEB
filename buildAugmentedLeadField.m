@@ -23,6 +23,7 @@ for ic=1:Nic
     % F = scatteredInterpolant(xyz(loc2,:),M(loc2,ic),'linear','none');
     A(:,ic) = F(hm.channelSpace);
 end
+A = [A eye(Ny)];
 norm_K = norm(hm.K);
 L = hm.K/norm_K;
 Delta = blkdiag(hm.L/norm_K,eye(Nic));
