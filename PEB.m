@@ -16,10 +16,12 @@ classdef PEB < handle
             'maxTol',1e-1,...       % Maximum tolerance of logE change
             'bufferSize',100,...    % History buffer size
             'gammaMin',1,...        % Minimum gamma allowed in the first stage  
-            'doPruning','true');    % Enable the pruning stage      
+            'doPruning','true',...  % Enable the pruning stage      
+            'smoothLambda', true);
     end
     properties(GetAccess=private)
         Iy
+        lambdaBuffer = nan(100,1);
     end
     
     methods
@@ -94,19 +96,22 @@ classdef PEB < handle
         end
         
         %%
-        function [X,lambda, gamma_F, gamma] = update(obj,Y,lambda0,gamma0,options)
+        function [X,lambda, gamma_F, gamma, logE] = update(obj,Y,lambda0,gamma0,options)
             if nargin < 4
                 lambda0 = []; 
                 gamma0 = [];
             end
-            if isempty(lambda0) || isempty(gamma0)
+            if isempty(lambda0) && isempty(gamma0)
                 [lambda0, gamma0] = initHyperparameters(obj, Y);
+            elseif ~isempty(lambda0) && isempty(gamma0)
+                [~, gamma0] = initHyperparameters(obj, Y);
             end
             if nargin < 5
                 options = obj.defaultOptions;
             end
-            [lambda, gamma, gamma_F] = learning(obj,Y,lambda0, gamma0,options);
+            [lambda, gamma, gamma_F, history] = learning(obj,Y,lambda0, gamma0,options);
             X = inference(obj, Y);
+            logE = history.logE(history.pointer);
         end
     end
     methods(Access=private)
@@ -153,6 +158,12 @@ classdef PEB < handle
                 if diff(history.logE(k-1:k)) < options.maxTol, break;end
             end
             history.pointer = k;
+            if options.smoothLambda
+                obj.lambdaBuffer = circshift(obj.lambdaBuffer,-1);
+                obj.lambdaBuffer(end) = lambda;
+                lambda = mean(obj.lambdaBuffer(~isnan(obj.lambdaBuffer)));
+                obj.lambdaBuffer(end) = lambda;
+            end
         end
 
         %%
