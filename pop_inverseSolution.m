@@ -1,34 +1,39 @@
-function EEG = pop_inverseSolution(EEG, windowSize, overlaping, solverType, saveFull, postprocCallback)
+function EEG = pop_inverseSolution(EEG, windowSize, overlaping, solverType, saveFull, account4artifacts, postprocCallback)
 if nargin < 1, error('Not enough input arguments.');end
 if nargin < 5
-    answer = inputdlg({'Window size','Overlaping (%)', 'Save full PCD', 'Solver type'},'pop_inverseSolution',1,{num2str((40/1000)*EEG.srate),'50', 'bsbl', 'true'});
+    answer = inputdlg({'Window size','Overlaping (%)', 'Save full PCD', 'Solver type','Account for artifacts'},'pop_inverseSolution',1,{num2str((40/1000)*EEG.srate),'50', 'bsbl', 'true', 'true'});
     if isempty(answer)
         error('Not enough input arguments.');
     else
         windowSize = str2double(answer{1});
-        if isempty(windowSize)
-            disp('Invalid input for windowSize parameter, we will use the default value.')
-            windowSize= (40/1000)*EEG.srate;
-        end
         overlaping = str2double(answer{2});
-        if isempty(overlaping)
-            disp('Invalid input for overlaping parameter, we will use the default value.')
-            overlaping= 50;
-        end
         solverType = lower(answer{3});
-        if ~any(ismember({'loreta','bsbl'},solverType))
-            disp(['Solver ' solverType 'is not available, we will use bsbl.']);
-            solverType = 'bsbl';
-        end
         saveFull = str2num(lower(answer{4})); %#ok
-        if isempty(saveFull)
-            disp('Invalid input for saveFull parameter, we will use the default value.')
-            saveFull= true;
-        end
+        account4artifacts = str2num(lower(answer{5})); %#ok
     end
 end
+if ~isnumeric(windowSize)
+    disp('Invalid input for windowSize parameter, we will use the default value.')
+    windowSize= (40/1000)*EEG.srate;
+end
+if ~isnumeric(overlaping)
+    disp('Invalid input for overlaping parameter, we will use the default value.')
+    overlaping= 50;
+end
+if ~any(ismember({'loreta','bsbl'},solverType))
+    disp(['Solver ' solverType 'is not available, we will use bsbl.']);
+    solverType = 'bsbl';
+end
+if ~islogical(saveFull)
+    disp('Invalid input for saveFull parameter, we will use the default value.')
+    saveFull= true;
+end
+if ~islogical(saveFull)
+    disp('Invalid input for account4artifacts parameter, we will use the default value.')
+    account4artifacts= true;
+end
+if nargin < 7, postprocCallback = [];end
 overlaping = overlaping/100;
-if nargin < 6, postprocCallback = [];end
 
 % Load the head model
 try
@@ -52,8 +57,8 @@ EEG = pop_select(EEG,'channel',loc);
 
 % Initialize the inverse solver
 Ndipoles = size(hm.cortex.vertices,1);
-if exist('Artifact_dictionary.mat','file')
-    load('Artifact_dictionary.mat');
+if account4artifacts && exist('Artifact_dictionary.mat','file')
+    load('Artifact_dictionary.mat'); %#ok
     [H, Delta, blocks, indG, indV] = buildAugmentedLeadField(hm, A, chanlocs);
 else
     norm_K = norm(hm.K);
@@ -117,8 +122,9 @@ windowSize=max([5,windowSize]);
 smoothing = hanning(overlap*2);
 smoothing = smoothing(1:overlap)';
 
+logE = zeros([length(1:delta:EEG.pnts),EEG.trials]);
 gamma = zeros([solver.Ng,length(1:delta:EEG.pnts),EEG.trials]);
-time_g = EEG.times(1:delta:EEG.pnts);
+indGamma = EEG.times(1:delta:EEG.pnts);
 
 % Perform source estimation
 fprintf('PEB source estimation...\n');
@@ -137,7 +143,8 @@ for trial=1:EEG.trials
         end
         
         % Source estimation
-        [Xtmp,~,~,gamma(:,c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
+        [Xtmp,~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
+        indGamma(c) = loc(end);
         
         % Stitch windows
         if k>1 && windowSize > 1
@@ -163,15 +170,25 @@ for trial=1:EEG.trials
     end
     fprintf('\n');
 end
-fprintf('Done!\n');
+fprintf('done\n');
 EEG.etc.src.act = X_roi;
 EEG.etc.src.roi = hm.atlas.label;
 EEG.etc.src.gamma = gamma;
-EEG.etc.src.time_g = time_g;
-EEG.data = EEG.data;
+EEG.etc.src.indGamma = indGamma;
 EEG.etc.src.H = H;
 EEG.etc.src.indG = indG;
 EEG.etc.src.indV = indV;
+EEG.etc.src.logE = logE;
+
+fprintf('Cleaning data...');
+dim = size(X);
+if length(dim) < 3
+    EEG.data = H(:,indG)*X(indG,:);
+else
+    EEG.data = reshape(H(:,indG)*reshape(X(indG,:,:),length(indG),[]),[EEG.nbchan, EEG.pnts, EEG.trials]);
+end
+fprintf('done.\n');
+
 if saveFull
     try
         EEG.etc.src.actFull = X;
@@ -181,10 +198,11 @@ if saveFull
 else
     EEG.etc.src.actFull = [];
 end
-EEG.history = char(EEG.history,['EEG = pop_inverseSolution(EEG, ' num2str(windowSize) ', ' num2str(overlaping) ,', ' solverType ', ' num2str(saveFull) ');']);
+EEG.history = char(EEG.history,['EEG = pop_inverseSolution(EEG, ' num2str(windowSize) ', ' num2str(overlaping) ,', ' solverType ', ' num2str(saveFull) ', ' num2str(account4artifacts) ');']);
 disp('The source estimates were saved in EEG.etc.src');
 end
 
+%%
 function x_roi = computeSourceROI(x,P,isVect)
 if isVect
     x_roi = sqrt(P*(x.^2));
