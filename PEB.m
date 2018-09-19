@@ -21,11 +21,13 @@ classdef PEB < handle
     end
     properties(GetAccess=private)
         Iy
-        lambdaBuffer = nan(100,1);
+        lambdaBuffer = [];
     end
     
     methods
-        function obj = PEB(H, Delta, blocks)
+        function obj = PEB(H, Delta, blocks, lambdaBufferSize)
+            if nargin < 4, lambdaBufferSize = 1000;end
+            obj.lambdaBuffer = nan(lambdaBufferSize,1);
             obj.H = H;
             [obj.Ny,obj.Nx] = size(H);
             obj.Ng = size(blocks,2);
