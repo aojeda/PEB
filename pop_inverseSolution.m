@@ -84,7 +84,7 @@ catch ME
     disp(ME.message)
     disp('Using a LargeTensor object...')
     try
-        X = invSol.LargeTensor([Nx, EEG.pnts, EEG.trials]);
+        X = LargeTensor([Nx, EEG.pnts, EEG.trials]);
     catch
         disp('Not enough disk space to save src data on your tmp/ directory, we will try your home/ instead.');
         [~,fname] = fileparts(tempname);
