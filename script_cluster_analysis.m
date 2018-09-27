@@ -12,54 +12,67 @@ for k=1:length(dataFolders)
 end
 files(1,:) = [];
 n = size(files,1);
+
+%% Co-register with Colin27
+for subject=1:n
+    file = deblank(files(subject,:));
+    [filePath,fileName,ex] = fileparts(file);
+    if exist(fullfile(filePath,[fileName '_Colin27',ex]),'file')
+        continue;
+    end
+    EEG = pop_loadset(file);
+    
+    % Remove neck channels
+    try         %#ok
+        neck = [];
+        label = {EEG.chanlocs.labels};
+        for ch=1:EEG.nbchan
+            if ~isempty(strfind(label{ch},'n'))
+                if ~isempty(str2double(label{ch}(2:end)))
+                    neck(end+1) = ch;
+                end
+            end
+        end
+        EEG = pop_select(EEG,'nochannel',neck);
+    end
+    
+    % Co-register with template
+    EEG = pop_forwardModel(EEG);
+    
+    % Save set
+    movefile(EEG.etc.src.hmfile,fullfile(filePath,[fileName '_Colin27.mat']));
+    EEG.etc.src.hmfile = fullfile(filePath,[fileName '_Colin27.mat']);
+    pop_saveset(EEG, 'filename', [fileName '_Colin27'], 'filepath', filePath, 'savemode', 'onefile'); 
+end
+
+%% Make train ans test sets
+files = [];
+for k=1:length(dataFolders)
+    tmp = pickfiles(dataFolders{k},'_Colin27.set');
+    files = char(files, tmp);
+end
+files(1,:) = [];
+n = size(files,1);
 permutation = randperm(n,n);
 files = files(permutation, :);
 trainSet = files(randperm(n,round(0.8*n)),:);
 testSet = setdiff(files,trainSet,'rows','stable');
 
-%% Load reference chanlocs
-EEG = pop_loadset(referenceSetFile);
-refChanlocs = EEG.chanlocs;
-
-% Set standard sensor positions
-hm = headModel.loadDefault;
-for k=1:EEG.nbchan
-    loc = find(ismember(hm.labels,refChanlocs(k).labels));
-    if ~isempty(loc)
-        refChanlocs(k).X = hm.channelSpace(loc,1);
-        refChanlocs(k).Y = hm.channelSpace(loc,2);
-        refChanlocs(k).Z = hm.channelSpace(loc,3);
-    end
-end
-xyz = [[refChanlocs.X]' [refChanlocs.Y]' [refChanlocs.Z]'];
-hmRef = headModel.loadDefault;
-hmRef.channelSpace = xyz;
-hmRef.labels = {refChanlocs.labels};
-EEG.chanlocs = refChanlocs;
-EEG =pop_chanedit(EEG, 'eval','chans = pop_chancenter( chans, [],[]);');
-refChanlocs = EEG.chanlocs; 
-
-
-%% Collect ICs
+%% Co-register ICs
+n = size(trainSet,1);
 M = [];
-for k=1:size(trainSet,1)
-    EEG_k = pop_loadset(deblank(trainSet(k,:)));
-    
-    % Set standard sensor positions
-    for ch=1:EEG_k.nbchan
-        loc = find(ismember(hm.labels,EEG_k.chanlocs(ch).labels));
-        if ~isempty(loc)
-            EEG_k.chanlocs(ch).X = hm.channelSpace(loc,1);
-            EEG_k.chanlocs(ch).Y = hm.channelSpace(loc,2);
-            EEG_k.chanlocs(ch).Z = hm.channelSpace(loc,3);
-        end
-    end
-    xyz_k = [[EEG_k.chanlocs.X]' [EEG_k.chanlocs.Y]' [EEG_k.chanlocs.Z]'];
-    for ic = 1:size(EEG_k.icawinv,2)
-        F = scatteredInterpolant(xyz_k,EEG_k.icawinv(:,ic));
-        M = [M F(xyz)];     %#ok
+template = headModel.loadDefault;
+for subject=1:n
+    file = deblank(files(subject,:));
+    EEG = pop_loadset(file);
+    hm = headModel.loadFromFile(EEG.etc.src.hmfile);
+
+    % Interpolate ICs in the channel space of the template
+    for ic = 1:size(EEG.icawinv,2)
+        F = scatteredInterpolant(hm.channelSpace,EEG.icawinv(:,ic));
+        M = [M F(template.channelSpace)];     %#ok
         % Plot IC on the skin of the template to make sure that the interpolation went well 
-        % hmRef.plotOnModel(randn(5003,1),M(:,end)); 
+        % template.plotOnModel(randn(5003,1),M(:,end)); 
     end
 end
 
