@@ -75,6 +75,7 @@ for subject=1:n
         % template.plotOnModel(randn(5003,1),M(:,end)); 
     end
 end
+chanlocs = template.makeChanlocs;
 
 
 %% T-SNE
