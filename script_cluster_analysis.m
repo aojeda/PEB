@@ -79,48 +79,79 @@ chanlocs = template.makeChanlocs;
 
 
 %% T-SNE
-Y = tsne(M','Distance','correlation','NumDimensions',2,'Verbose',1,'Options',struct('MaxIter',1000,'OutputFcn',[],'TolFun',1e-10),'Perplexity',50);
+Y = tsne(M','Distance','correlation','NumDimensions',2,'Verbose',1,'Options',struct('MaxIter',500,'OutputFcn',[],'TolFun',1e-10),'Perplexity',50);
+indEMG = sqrt(sum(Y.^2,2))>40;
 
 %% K_Means
 nc = 15;
-[L, C] = kmeans(M',nc,'distance','sqeuclidean', 'Replicates',9);
+[L, C] = kmedoids(M',nc,'distance','sqeuclidean', 'Replicates',9);
 C = C';
+
+% [L2,C2] = kmeans(M(:,indEMG)',11,'distance','sqeuclidean', 'Replicates',9);
+% C2 = C2';
+
 
 %% Save C L M trainSet and testSet
 save(fullfile(results,'cluster.mat'),'C','L','M','trainSet','testSet');
 
 %% Make figure
-color = jet(nc);
+
+close all
+color = parula(nc);
 fig = figure('Position',[243    89   744   700]);
-scatter(Y(:,1),Y(:,2),15,color(L,:),'filled');
+% scatter(Y(:,1),Y(:,2),15,color(L,:),'filled','Marker','o','MarkerFaceAlpha',0.5);
+scatter(Y(~indEMG,1),Y(~indEMG,2),15,color(L(~indEMG),:),'filled','Marker','o','MarkerFaceAlpha',0.5);
+hold on
+colorEMG = [0.5 0.5 0.5];
+scatter(Y( indEMG,1)*1,Y(indEMG,2)*1,15,colorEMG,'filled','Marker','o','MarkerFaceAlpha',0.5);
 axis equal
 ax_tsne = findobj(fig,'type','axes');
 ax_tsne.Position = [0.0681    0.0326    0.8651    0.8994];
 hold(ax_tsne, 'on')
 grid(ax_tsne, 'on')
 set(ax_tsne, 'box','on')
-mx = 70;
+mx = 60;
 xlim([-1 1]*mx)
 ylim([-1 1]*mx)
 
-ind = reshape(1:nc,3,[]);
 figure;
-for j=1:nc/3
-    for i=1:3
-        ax = subplot(3,nc/3,ind(i,j));
-        topoplot(C(:,ind(i,j)),refChanlocs,'electrodes','off');
-        % topoplot(mean(M(:,L==ind(i,j)),2),refChanlocs,'electrodes','off');
-        title(num2str(ind(i,j)))
-        colormap(ax,bipolar(256,0.8));
-        axis on
-        ax.Position(3:4) = [0.1 0.1];
-        copyobj(ax,fig);
-        mu = [median(Y(L==ind(i,j),1)),median(Y(L==ind(i,j),2))]+1;
-        hl = line(ax_tsne,mu(1)*[1 2],mu(2)*[1 2],'Color',color(ind(i,j),:),'LineWidth',2);
-    end
+M1 = M(:,~indEMG);
+ang = linspace(0,360*(nc-1)/nc,nc)*pi/180;%+5*pi/6;
+for i=1:nc
+    [ax_x,ax_y] = pol2cart(ang(i),0.65);
+    ax = axes('Position',[ax_x/2+0.5-0.05,ax_y/2+0.5-0.05,0.1,0.1]);
+    %topoplot(C(:,i),chanlocs,'electrodes','off');
+    topoplot(mean(M1(:,L(~indEMG)==i),2),chanlocs,'electrodes','off');
+    title(num2str(i))
+    colormap(ax,bipolar(256,0.8));
+    axis(ax,'on');
+    ax.Position(3:4) = [0.1 0.1];
+    ax = copyobj(ax,fig);
+    axis(ax,'off');
 end
 
-%% Save figure 
+
+% fig = figure('Position',[243    89   744   700]);
+% scatter(Y2(:,1),Y2(:,2),15,colorEMG(L2,:),'filled','MarkerFaceAlpha',0.75);
+% figure
+
+M2 = M(:,indEMG);
+nc2 = size(C2,2);
+ang = linspace(0,360*(nc2-1)/nc2,nc2)*pi/180+pi/2;
+for i=1:nc2
+    [ax_x,ax_y] = pol2cart(ang(i),0.85);
+    ax = axes('Position',[ax_x/2+0.5-0.05,ax_y/2+0.5-0.05,0.1,0.1]);
+    %topoplot(C2(:,i),chanlocs,'electrodes','on');
+    topoplot(median(M2(:,L(indEMG)==i),2),chanlocs,'electrodes','off');
+    title(num2str(i))
+    colormap(ax,bipolar(256,0.8));
+    axis(ax,'on');
+    ax.Position(3:4) = [0.1 0.1];
+    ax = copyobj(ax,fig);
+    axis(ax,'off');
+end
+
+%% Save figure
 fig.PaperUnits = 'points';
 fig.PaperPosition = [0 0 500 500];
 print(fig, fullfile(figsFolder,'fig_cluster_labeled.eps'), '-depsc','-r600','-opengl')
