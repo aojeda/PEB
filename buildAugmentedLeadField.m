@@ -1,4 +1,4 @@
-function [H, Delta, blocks, indG, indV] = buildAugmentedLeadField(hm, M, chanlocs)
+function [H, Delta, blocks, indG, indV] = buildAugmentedLeadField(hm)
 % Augments the lead field matrix with artifact scalp maps projections.
 % 
 % Inputs:
@@ -11,20 +11,17 @@ function [H, Delta, blocks, indG, indV] = buildAugmentedLeadField(hm, M, chanloc
 %   indG are the indices of the brain sources
 %   indV are the indices of the artifact sources
 
-% xyz =  [[chanlocs.X]'  [chanlocs.Y]'  [chanlocs.Z]'];
-labels  = {chanlocs.labels};
-[~, loc1, loc2] = intersect(lower(hm.labels), lower(labels),'stable');
+c = load('Artifact_dictionary.mat');
+templateFile = fullfile(fileparts(which('headModel.m')),'resources',[c.templateName '.mat']);
+template = headModel.loadFromFile(templateFile);
 [Ny,Ng] = size(hm.K);
-Nic = size(M,2);
+Nic = size(c.A,2);
 Nroi = length(hm.atlas.label);
 A = zeros(Ny,Nic);
 for ic=1:Nic
-    F = scatteredInterpolant(hm.channelSpace(loc1,:),M(loc2,ic),'linear','linear');
-    % F = scatteredInterpolant(xyz(loc2,:),M(loc2,ic),'linear','none');
+    F = scatteredInterpolant(template.channelSpace,c.A(:,ic),'linear','linear');
     A(:,ic) = F(hm.channelSpace);
 end
-%A = [A double(ismember(hm.labels,'T7'))' double(ismember(hm.labels,'T8'))'];
-A = [A eye(Ny)];
 Nv = size(A,2);
 norm_K = norm(hm.K);
 L = hm.K/norm_K;

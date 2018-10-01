@@ -58,8 +58,7 @@ EEG = pop_select(EEG,'channel',loc);
 % Initialize the inverse solver
 Ndipoles = size(hm.cortex.vertices,1);
 if account4artifacts && exist('Artifact_dictionary.mat','file')
-    load('Artifact_dictionary.mat'); %#ok
-    [H, Delta, blocks, indG, indV] = buildAugmentedLeadField(hm, A, chanlocs);
+    [H, Delta, blocks, indG, indV] = buildAugmentedLeadField(hm);
 else
     norm_K = norm(hm.K);
     H = hm.K/norm_K;
