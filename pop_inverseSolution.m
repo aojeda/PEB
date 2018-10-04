@@ -133,7 +133,7 @@ for trial=1:EEG.trials
         loc(loc>EEG.pnts) = [];
         if isempty(loc), break;end
         if length(loc) < windowSize
-            X(:,loc(1):end,trial) = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
+            [X(:,loc(1):end,trial),~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
             X_roi(:,loc(1):end,trial) = computeSourceROI(X(indG,loc(1):end,trial),P,isVect);
             break;
         end
@@ -202,12 +202,15 @@ end
 end
 
 %%
-function b = filterDesign(Fs)
+function b = filterDesign(Fs,N)
+if nargin < 2
+    N = 16;              % Order;
+end
+    
 % FIR Window Lowpass filter designed using the FIR1 function.
 % All frequency values are in Hz.
 
-Fc   = floor(Fs/2)-5;   % Cutoff Frequency
-N    = 32;              % Order
+Fc   = floor(Fs/2)-20;  % Cutoff Frequency
 flag = 'scale';         % Sampling Flag
 Beta = 0.5;             % Window Parameter
 
