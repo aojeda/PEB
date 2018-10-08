@@ -22,6 +22,7 @@ for ic=1:Nic
     F = scatteredInterpolant(template.channelSpace,c.A(:,ic),'linear','linear');
     A(:,ic) = F(hm.channelSpace);
 end
+A = [A eye(Ny)];
 Nv = size(A,2);
 norm_K = norm(hm.K);
 L = hm.K/norm_K;
