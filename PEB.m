@@ -3,7 +3,7 @@ classdef PEB < handle
         H
         Hi
         HiHit
-        Ci
+        CiHt
         Ut
         s2
         Ny
@@ -34,9 +34,11 @@ classdef PEB < handle
             
             obj.Hi    = cell(1,obj.Ng);
             obj.HiHit = zeros([obj.Ny, obj.Ny, obj.Ng]);
-            obj.Ci    = sparse(obj.Nx^2,obj.Ng);
+            Ci        = sparse(obj.Nx^2,obj.Ng);
+            obj.CiHt  = sparse(obj.Nx*obj.Ny,obj.Ng);
             sqCi      = cell(1,obj.Ng);
-            ind       = zeros(obj.Nx,obj.Nx);
+            ind1      = zeros(obj.Nx,obj.Nx);
+            ind2      = zeros(obj.Nx,obj.Ny);
             obj.Iy    = speye(obj.Ny);
             
             for k=1:obj.Ng
@@ -46,10 +48,14 @@ classdef PEB < handle
                 % Per-block covariance matrix
                 sqCi{k} = inv(Di);
                 sqCi{k} = sqCi{k}/norm(sqCi{k},'fro');
-                ind(blocks(:,k),blocks(:,k)) = 1;
-                Citmp = sqCi{k}*sqCi{k}';
-                obj.Ci(ind==1,k) = Citmp(:);
-                ind(blocks(:,k),blocks(:,k)) = 0;
+                ind1(blocks(:,k),blocks(:,k)) = 1;
+                ind2(blocks(:,k),:) = 1;
+                C_i = sqCi{k}*sqCi{k}';
+                Ci(ind1==1,k) = C_i(:);
+                CiHt_k = C_i*obj.H(:,blocks(:,k))';
+                obj.CiHt(ind2==1,k) = CiHt_k(:);
+                ind2(blocks(:,k),:) = 0;
+                ind1(blocks(:,k),blocks(:,k)) = 0;
                 
                 % Per-block standardized gain matrices
                 obj.Hi{k} = obj.H(:,blocks(:,k))*sqCi{k};
@@ -57,7 +63,7 @@ classdef PEB < handle
             end
             
             % Unweighted prior covariance
-            C = reshape(sum(obj.Ci,2),[obj.Nx, obj.Nx]);
+            C = reshape(sum(Ci,2),[obj.Nx, obj.Nx]);
                 
             % Fix possible 0 diagonal elements
             dc = diag(C);
@@ -86,10 +92,10 @@ classdef PEB < handle
             if options.doPruning
                 [gamma,history] = pruning(obj,Y,lambda,gamma,history,options);
             end
-            Sx = obj.Ci*gamma;
-            Sx = sparse(reshape(Sx,obj.Nx,obj.Nx));
             [~, iSy] = obj.calculateModelCov(lambda,gamma);
-            obj.Tx = Sx*obj.H'*iSy;
+            
+            SxHt = reshape(obj.CiHt*gamma,[obj.Nx obj.Ny]);
+            obj.Tx = SxHt*iSy;
         end
         
         %%
