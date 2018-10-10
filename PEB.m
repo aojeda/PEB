@@ -1,11 +1,8 @@
 classdef PEB < handle
     properties
         H
-        Hi
-        HiHit
-        CiHt
-        Ut
-        s2
+        Delta
+        Blocks
         Ny
         Nx
         Ng
@@ -20,6 +17,11 @@ classdef PEB < handle
             'smoothLambda', true);
     end
     properties(GetAccess=private)
+        Hi
+        HiHit
+        CiHt
+        Ut
+        s2
         Iy
         lambdaBuffer = [];
     end
@@ -29,6 +31,8 @@ classdef PEB < handle
             if nargin < 4, lambdaBufferSize = 1000;end
             obj.lambdaBuffer = nan(lambdaBufferSize,1);
             obj.H = H;
+            obj.Delta = Delta;
+            obj.Blocks = blocks;
             [obj.Ny,obj.Nx] = size(H);
             obj.Ng = size(blocks,2);
             
@@ -176,6 +180,29 @@ classdef PEB < handle
 
         %%
         function [gamma,history] = pruning(obj,Y,lambda,gamma,history,options)
+            % Implements the \gamma-MAP SBL algorithm of David Wipf and B.
+            % Rao.
+            %
+            %% -------------------------------------------------------------
+            % For certain problems the following algorithm may be faster:
+            %
+            %--Precompute the following matrices in the constructor (once)--
+            % obj.A = sparse([]);
+            % for i=1:obj.Ng
+            %     obj.A = blkdiag(obj.A,obj.Hi{i}');
+            % end
+            % obj.Ig = speye(obj.Ng);
+            %
+            %--Substitute this function with the following code-------------
+            % Nt = size(Y,2); 
+            % iSy_sq = sqrtm(iSy);
+            % Yk = kron(Ig,iSy_sq'*Y);
+            % B = kron(Ig,iSy_sq);
+            % C = obj.A*B;
+            % num = sqrt(sum(reshape(sum((C*Yk).^2),Nt,obj.Ng)))';
+            % den = sqrt(sum(reshape(sum(C.^2), obj.Ny, obj.Ng)))';
+            % gamma = (gamma/sqrt(Nt)).*num./(den+eps);
+            %% -----------------------------------------------------------------------------
             Nt = size(Y,2);
             Cy = Y*Y'/Nt;
             for k=1:options.maxIter
