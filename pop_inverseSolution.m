@@ -1,4 +1,6 @@
 function EEG = pop_inverseSolution(EEG, windowSize, overlaping, solverType, saveFull, account4artifacts, postprocCallback)
+persistent solver
+
 if nargin < 1, error('Not enough input arguments.');end
 if nargin < 5
     answer = inputdlg({'Window size','Overlaping (%)', 'Save full PCD', 'Solver type','Account for artifacts'},'pop_inverseSolution',1,{num2str((40/1000)*EEG.srate),'50', 'bsbl', 'true', 'true'});
@@ -69,7 +71,18 @@ else
     indV = [];
 end
 Nx = size(H,2);
-solver = PEB(H, Delta, blocks);
+if isempty(solver)
+    solver = PEB(H, Delta, blocks);
+else
+    try
+        if sum((solver.H(:) - H(:)).^2) + sum((solver.Delta(:) - Delta(:)).^2) + sum((solver.Blocks(:) - blocks(:)).^2) ~=0
+            solver = PEB(H, Delta, blocks); 
+        end
+    catch ME
+        disp(ME)
+        solver = PEB(H, Delta, blocks);
+    end
+end
 options = solver.defaultOptions;
 options.verbose = false;
 if strcmpi(solverType,'loreta')
