@@ -40,7 +40,6 @@ classdef PEB < handle
             obj.HiHit = zeros([obj.Ny, obj.Ny, obj.Ng]);
             Ci        = sparse(obj.Nx^2,obj.Ng);
             obj.CiHt  = sparse(obj.Nx*obj.Ny,obj.Ng);
-            sqCi      = cell(1,obj.Ng);
             ind1      = zeros(obj.Nx,obj.Nx);
             ind2      = zeros(obj.Nx,obj.Ny);
             obj.Iy    = speye(obj.Ny);
@@ -50,11 +49,11 @@ classdef PEB < handle
                 Di = Delta(blocks(:,k),blocks(:,k));
                 
                 % Per-block covariance matrix
-                sqCi{k} = inv(Di);
-                sqCi{k} = sqCi{k}/norm(sqCi{k},'fro');
+                sqCi_k = inv(Di);
+                sqCi_k = sqCi_k/norm(sqCi_k,'fro');
                 ind1(blocks(:,k),blocks(:,k)) = 1;
                 ind2(blocks(:,k),:) = 1;
-                C_i = sqCi{k}*sqCi{k}';
+                C_i = sqCi_k*sqCi_k';
                 Ci(ind1==1,k) = C_i(:);
                 CiHt_k = C_i*obj.H(:,blocks(:,k))';
                 obj.CiHt(ind2==1,k) = CiHt_k(:);
@@ -62,7 +61,7 @@ classdef PEB < handle
                 ind1(blocks(:,k),blocks(:,k)) = 0;
                 
                 % Per-block standardized gain matrices
-                obj.Hi{k} = obj.H(:,blocks(:,k))*sqCi{k};
+                obj.Hi{k} = obj.H(:,blocks(:,k))*sqCi_k;
                 obj.HiHit(:,:,k) = obj.Hi{k}*obj.Hi{k}';
             end
             
