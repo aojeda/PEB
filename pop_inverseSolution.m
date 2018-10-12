@@ -1,5 +1,6 @@
 function EEG = pop_inverseSolution(EEG, windowSize, overlaping, solverType, saveFull, account4artifacts, postprocCallback)
-persistent solver
+persistent solver X
+
 
 if nargin < 1, error('Not enough input arguments.');end
 if nargin < 5
@@ -83,6 +84,7 @@ else
         solver = PEB(H, Delta, blocks);
     end
 end
+solver.init;
 options = solver.defaultOptions;
 options.verbose = false;
 if strcmpi(solverType,'loreta')
@@ -90,23 +92,18 @@ if strcmpi(solverType,'loreta')
 end
 EEG.data = double(EEG.data);
 Nroi = length(hm.atlas.label);
-try
-    X = zeros(Nx, EEG.pnts, EEG.trials);
-catch ME
-    disp(ME.message)
-    disp('Using a LargeTensor object...')
+
+if isempty(X)
+    X = allocateMemory([Nx, EEG.pnts, EEG.trials]);
+else
     try
-        X = LargeTensor([Nx, EEG.pnts, EEG.trials]);
-    catch
-        disp('Not enough disk space to save src data on your tmp/ directory, we will try your home/ instead.');
-        [~,fname] = fileparts(tempname);
-        if ispc
-            homeDir = getenv('USERPROFILE');
+        if any([Nx, EEG.pnts, EEG.trials] ~= size(X))
+            X = allocateMemory([Nx, EEG.pnts, EEG.trials]);
         else
-            homeDir = getenv('HOME');
+            X(:) = 0;
         end
-        filename = fullfile(homeDir,fname);
-        X = invSol.LargeTensor([Nx, EEG.pnts, EEG.trials], filename);
+    catch
+        X = allocateMemory([Nx, EEG.pnts, EEG.trials]);
     end
 end
 X_roi = zeros(Nroi, EEG.pnts, EEG.trials);
@@ -124,12 +121,15 @@ else
     isVect = false;
 end
 
-prc_5 = round(linspace(1,EEG.pnts,30));
-iterations = 1:windowSize:EEG.pnts-windowSize;
-prc_10 = iterations(round(linspace(1,length(iterations),10)));
-
 windowSize=max([5,windowSize]);
-smoothing = filterDesign(EEG.srate);
+overlapWin = round(windowSize*overlaping);
+stepWin = windowSize-overlapWin;
+smoothing = hanning(overlapWin*2)';
+smoothing = smoothing(1:end/2);
+
+prc_5 = round(linspace(1,EEG.pnts,30));
+iterations = 1:stepWin:EEG.pnts-stepWin;
+prc_10 = iterations(round(linspace(1,length(iterations),10)));
 
 logE = zeros([length(1:windowSize:EEG.pnts),EEG.trials]);
 gamma = zeros([solver.Ng,length(1:windowSize:EEG.pnts),EEG.trials]);
@@ -141,7 +141,8 @@ fprintf('PEB source estimation...\n');
 for trial=1:EEG.trials
     fprintf('Processing trial %i of %i...',trial, EEG.trials);
     c = 1;
-    for k=1:windowSize:EEG.pnts
+    % for k=1:halfWindow:EEG.pnts
+    for k=1:stepWin:EEG.pnts
         loc = k:k+windowSize-1;
         loc(loc>EEG.pnts) = [];
         if isempty(loc), break;end
@@ -151,12 +152,21 @@ for trial=1:EEG.trials
             break;
         end
         
-        % Source estimation
-        [X(:,loc,trial),~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
-        indGamma(c) = loc(end);
         
-        % Compute average ROI time series
-        X_roi(:,loc,trial) = computeSourceROI(X(indG,loc,trial),P,isVect);
+        % Source estimation
+        [Xtmp,~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
+        
+        % Stitch windows
+        if k>1 && windowSize > 1
+            X(:,loc(1:overlapWin),trial) = bsxfun(@times, Xtmp(:,1:overlapWin), smoothing) + bsxfun(@times,X(:,loc(1:overlapWin),trial), 1-smoothing);
+            X(:,loc(overlapWin+1:end),trial) = Xtmp(:,overlapWin+1:end);
+        else
+            X(:,loc,trial) = Xtmp;
+        end
+        
+        % Source estimation
+        %[X(:,loc,trial),~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
+        %indGamma(c) = loc(end);
         
         % Post-processing (if any)
         if ~isempty(postprocCallback)
@@ -169,8 +179,11 @@ for trial=1:EEG.trials
         if ~isempty(prc), fprintf('%i%%',prc*10);end
         c = c+1;
     end
-    X(:,:,trial) = filtfilt(smoothing,1,X(:,:,trial)')';
-    X_roi(:,:,trial) = filtfilt(smoothing,1,X_roi(:,:,trial)')';
+    
+    % Compute average ROI time series
+    X_roi(:,:,trial) = computeSourceROI(X(indG,:,trial),P,isVect);
+    % X(:,:,trial) = filtfilt(smoothing,1,X(:,:,trial)')';
+    % X_roi(:,:,trial) = filtfilt(smoothing,1,X_roi(:,:,trial)')';
     fprintf('\n');
 end
 fprintf('done\n');
@@ -211,6 +224,17 @@ if isVect
     x_roi = sqrt(P*(x.^2));
 else
     x_roi = P*x;
+end
+end
+
+%%
+function X = allocateMemory(dim)
+try
+    X = zeros(dim);
+catch ME
+    disp(ME.message)
+    disp('Using a LargeTensor object...')
+    X = LargeTensor(dim);
 end
 end
 
