@@ -124,6 +124,10 @@ classdef PEB < handle
             X = inference(obj, Y);
             logE = history.logE(history.pointer);
         end
+        
+        function init(obj)
+            obj.lambdaBuffer = nan(size(obj.lambdaBuffer));
+        end
     end
     methods(Access=private)
         %%
