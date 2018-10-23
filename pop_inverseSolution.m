@@ -1,5 +1,5 @@
 function EEG = pop_inverseSolution(EEG, windowSize, overlaping, solverType, saveFull, account4artifacts, postprocCallback)
-persistent solver X
+persistent solver
 
 
 if nargin < 1, error('Not enough input arguments.');end
@@ -93,19 +93,8 @@ end
 EEG.data = double(EEG.data);
 Nroi = length(hm.atlas.label);
 
-if isempty(X)
-    X = allocateMemory([Nx, EEG.pnts, EEG.trials]);
-else
-    try
-        if any([Nx, EEG.pnts, EEG.trials] ~= size(X))
-            X = allocateMemory([Nx, EEG.pnts, EEG.trials]);
-        else
-            X(:) = 0;
-        end
-    catch
-        X = allocateMemory([Nx, EEG.pnts, EEG.trials]);
-    end
-end
+% Allocate memory
+X = allocateMemory([Nx, EEG.pnts, EEG.trials]);
 X_roi = zeros(Nroi, EEG.pnts, EEG.trials);
 
 % Construct the average ROI operator
@@ -148,7 +137,6 @@ for trial=1:EEG.trials
         if isempty(loc), break;end
         if length(loc) < windowSize
             [X(:,loc(1):end,trial),~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
-            X_roi(:,loc(1):end,trial) = computeSourceROI(X(indG,loc(1):end,trial),P,isVect);
             break;
         end
         
@@ -163,10 +151,7 @@ for trial=1:EEG.trials
         else
             X(:,loc,trial) = Xtmp;
         end
-        
-        % Source estimation
-        %[X(:,loc,trial),~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
-        %indGamma(c) = loc(end);
+        indGamma(c) = loc(end);
         
         % Post-processing (if any)
         if ~isempty(postprocCallback)
@@ -181,12 +166,13 @@ for trial=1:EEG.trials
     end
     
     % Compute average ROI time series
-    X_roi(:,:,trial) = computeSourceROI(X(indG,:,trial),P,isVect);
-    % X(:,:,trial) = filtfilt(smoothing,1,X(:,:,trial)')';
-    % X_roi(:,:,trial) = filtfilt(smoothing,1,X_roi(:,:,trial)')';
+    X_roi(:,:,trial) = computeSourceROI(X, indG, trial, P, isVect);
+    
+    % Data cleaning
+    EEG.data(:,:,trial) = cleanData(H, X, indG, trial);
+    
     fprintf('\n');
 end
-fprintf('done\n');
 EEG.etc.src.act = X_roi;
 EEG.etc.src.roi = hm.atlas.label;
 EEG.etc.src.gamma = gamma;
@@ -195,21 +181,14 @@ EEG.etc.src.H = H;
 EEG.etc.src.indG = indG;
 EEG.etc.src.indV = indV;
 EEG.etc.src.logE = logE;
-
-fprintf('Cleaning data...');
-dim = size(X);
-if length(dim) < 3
-    EEG.data = H(:,indG)*X(indG,:);
-else
-    EEG.data = reshape(H(:,indG)*reshape(X(indG,:,:),length(indG),[]),[EEG.nbchan, EEG.pnts, EEG.trials]);
-end
-fprintf('done.\n');
+fprintf('done\n');
 
 if saveFull
     try
         EEG.etc.src.actFull = X;
     catch
         EEG.etc.src.actFull = invSol.LargeTensor([Nx, EEG.pnts, EEG.trials], tempname);
+        EEG.etc.src.actFull(:) = X(:);
     end
 else
     EEG.etc.src.actFull = [];
@@ -218,12 +197,45 @@ EEG.history = char(EEG.history,['EEG = pop_inverseSolution(EEG, ' num2str(window
 disp('The source estimates were saved in EEG.etc.src');
 end
 
+
 %%
-function x_roi = computeSourceROI(x,P,isVect)
-if isVect
-    x_roi = sqrt(P*(x.^2));
-else
-    x_roi = P*x;
+function y = cleanData(H, X, indG, trial)
+try
+    y = H(:, indG)*X(indG,:, trial);
+catch
+    n = size(X,2);
+    y = zeros(size(H,1),n);
+    delta = min([1024 round(n/100)]);
+    for k=1:delta:n
+        ind = k:k+delta-1;
+        ind(ind>n) = [];
+        y(:,ind) = H(:, indG)*X(indG,ind, trial);
+    end
+end
+end
+
+%%
+function x_roi = computeSourceROI(X, indG, trial, P, isVect)
+try
+    x = X(indG,:, trial);
+    if isVect
+        x_roi = sqrt(P*(x.^2));
+    else
+        x_roi = P*x;
+    end
+catch
+    n = size(X,2);
+    x_roi = zeros(size(P,1),n);
+    delta = min([1024 round(n/100)]);
+    for k=1:delta:n
+        ind = k:k+delta-1;
+        ind(ind>n) = [];
+        if isVect
+            x_roi(:,ind) = sqrt(P*(X(indG,ind, trial).^2));
+        else
+            x_roi = P*X(indG,ind, trial);
+        end
+    end
 end
 end
 
