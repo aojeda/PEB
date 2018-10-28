@@ -135,7 +135,7 @@ for trial=1:EEG.trials
         loc(loc>EEG.pnts) = [];
         if isempty(loc), break;end
         if length(loc) < windowSize
-            [X(:,loc(1):end),~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
+            [X(:,loc(1):EEG.pnts),~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
             break;
         end
         
@@ -164,10 +164,10 @@ for trial=1:EEG.trials
     end
     
     % Compute average ROI time series
-    X_roi(:,:,trial) = computeSourceROI(X, indG, trial, P, isVect);
+    X_roi(:,:,trial) = computeSourceROI(X, indG, P, isVect);
     
     % Data cleaning
-    EEG.data(:,:,trial) = cleanData(H, X, indG, trial);
+    EEG.data(:,:,trial) = cleanData(H, X, indG);
     
     fprintf('\n');
 end
@@ -187,9 +187,9 @@ disp('The source estimates were saved in EEG.etc.src');
 end
 
 %%
-function y = cleanData(H, X, indG, trial)
+function y = cleanData(H, X, indG)
 try
-    y = H(:, indG)*X(indG,:, trial);
+    y = H(:, indG)*X(indG,:);
 catch
     n = size(X,2);
     y = zeros(size(H,1),n);
@@ -197,19 +197,18 @@ catch
     for k=1:delta:n
         ind = k:k+delta-1;
         ind(ind>n) = [];
-        y(:,ind) = H(:, indG)*X(indG,ind, trial);
+        y(:,ind) = H(:, indG)*X(indG,ind);
     end
 end
 end
 
 %%
-function x_roi = computeSourceROI(X, indG, trial, P, isVect)
+function x_roi = computeSourceROI(X, indG, P, isVect)
 try
-    x = X(indG,:, trial);
     if isVect
-        x_roi = sqrt(P*(x.^2));
+        x_roi = sqrt(P*(X(indG,:).^2));
     else
-        x_roi = P*x;
+        x_roi = P*X(indG,:);
     end
 catch
     n = size(X,2);
@@ -219,9 +218,9 @@ catch
         ind = k:k+delta-1;
         ind(ind>n) = [];
         if isVect
-            x_roi(:,ind) = sqrt(P*(X(indG,ind, trial).^2));
+            x_roi(:,ind) = sqrt(P*(X(indG,ind).^2));
         else
-            x_roi(:,ind) = P*X(indG,ind, trial);
+            x_roi(:,ind) = P*X(indG,ind);
         end
     end
 end

@@ -24,6 +24,9 @@ classdef EEGSource < handle
         function g = get.g(obj)
             g = obj.x(obj.indG,:,:);
         end
+        function g = get_source_trial(obj,trial)
+            g = obj.x(obj.indG,:,trial);
+        end
         function g_roi = get.g_roi(obj)
             dim = size(obj.x);
             if length(dim) < 3
