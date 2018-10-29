@@ -78,6 +78,12 @@ classdef PEB < handle
             [U,s] = svd(obj.H*sqC,'econ');
             obj.s2 = diag(s).^2;
             obj.Ut = U';
+            
+            try
+                invChol_mex(eye(4));
+            catch
+                compileInvChol;
+            end
         end
         
         %%
