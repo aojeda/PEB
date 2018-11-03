@@ -79,6 +79,9 @@ classdef PEB < handle
             obj.s2 = diag(s).^2;
             obj.Ut = U';
             
+            if ~exist('compileInvChol','file')
+                addpath(fullfile(fileparts(which('PEB')),'invChol'));
+            end
             try
                 invChol_mex(eye(4));
             catch
