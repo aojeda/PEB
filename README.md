@@ -1,1 +1,1 @@
-# Fast Parametric Empirical Bayes toolbox with applications for electromagnetic source imaging
+# PEB+: Parametric Empirical Bayes toolbox with additions
