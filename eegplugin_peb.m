@@ -18,3 +18,6 @@ addpath(genpath(p));
 h = findobj(gcf, 'tag', 'tools');
 hmMenu = uimenu( h, 'label', 'PEB+');
 uimenu( hmMenu, 'label', 'EEG source estimation','callback','EEG = pop_inverseSolution(EEG);');
+uimenu( hmMenu, 'label', 'Source browser','callback','pop_eegbrowserx(EEG);');
+uimenu( hmMenu, 'label', 'Move ROI source estimates to EEG.data','callback','try,EEG = moveSource2DataField(EEG);[ALLEEG EEG CURRENTSET]=eeg_store(ALLEEG, EEG);eeglab redraw;catch e, errordlg(e.message);end');
+
