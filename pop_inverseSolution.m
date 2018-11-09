@@ -1,12 +1,11 @@
 function EEG = pop_inverseSolution(EEG, windowSize, overlaping, solverType, saveFull, account4artifacts, postprocCallback)
 persistent solver
 
-
 if nargin < 1, error('Not enough input arguments.');end
 if nargin < 5
-    answer = inputdlg({'Window size','Overlaping (%)', 'Save full PCD', 'Solver type','Account for artifacts'},'pop_inverseSolution',1,{num2str((40/1000)*EEG.srate),'50', 'bsbl', 'true', 'true'});
+    answer = inputdlg({'Window size','Overlaping (%)', 'Save full PCD', 'Solver type','Account for artifacts'},'pop_inverseSolution',1,{num2str(round((40/1000)*EEG.srate)),'25', 'bsbl', 'true', 'true'});
     if isempty(answer)
-        error('Not enough input arguments.');
+        return;
     else
         windowSize = str2double(answer{1});
         overlaping = str2double(answer{2});
@@ -193,7 +192,7 @@ if saveFull
 else
     EEG.etc.src.actFull = [];
 end
-EEG.history = char(EEG.history,['EEG = pop_inverseSolution(EEG, ' num2str(windowSize) ', ' num2str(overlaping) ,', ' solverType ', ' num2str(saveFull) ', ' num2str(account4artifacts) ');']);
+EEG.history = char(EEG.history,['EEG = pop_inverseSolution(EEG, ' num2str(windowSize) ', ' num2str(overlapWin) ,', ''' solverType ''', ' num2str(saveFull) ', ' num2str(account4artifacts) ');']);
 disp('The source estimates were saved in EEG.etc.src');
 end
 
