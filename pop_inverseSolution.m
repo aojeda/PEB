@@ -30,7 +30,7 @@ if ~islogical(saveFull)
     disp('Invalid input for saveFull parameter, we will use the default value.')
     saveFull= true;
 end
-if ~islogical(saveFull)
+if ~islogical(account4artifacts)
     disp('Invalid input for account4artifacts parameter, we will use the default value.')
     account4artifacts= true;
 end
@@ -120,6 +120,7 @@ iterations = 1:stepWin:EEG.pnts-stepWin;
 prc_10 = iterations(round(linspace(1,length(iterations),10)));
 
 logE = zeros([length(1:windowSize:EEG.pnts),EEG.trials]);
+lambda = zeros([length(1:windowSize:EEG.pnts),EEG.trials]);
 gamma = zeros([solver.Ng,length(1:windowSize:EEG.pnts),EEG.trials]);
 indGamma = EEG.times(1:windowSize:EEG.pnts);
 
@@ -135,13 +136,13 @@ for trial=1:EEG.trials
         loc(loc>EEG.pnts) = [];
         if isempty(loc), break;end
         if length(loc) < windowSize
-            [X(:,loc(1):EEG.pnts,trial),~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
+            [X(:,loc(1):EEG.pnts,trial),lambda(:,c,trial),~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
             break;
         end
         
         
         % Source estimation
-        [Xtmp,~,~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
+        [Xtmp,lambda(:,c,trial),~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
         
         % Stitch windows
         if k>1 && windowSize > 1
@@ -157,7 +158,7 @@ for trial=1:EEG.trials
             EEG = postprocCallback(EEG, Gamma, EEG.times(loc(end)), trial);
         end
         % Progress indicatior
-        [~,ind] = intersect(loc(1:windowSize),prc_5);
+        [~,ind] = intersect(loc(1:min(length(loc),windowSize)),prc_5);
         if ~isempty(ind), fprintf('.');end
         prc = find(prc_10==k);
         if ~isempty(prc), fprintf('%i%%',prc*10);end
@@ -174,6 +175,7 @@ for trial=1:EEG.trials
 end
 EEG.etc.src.act = X_roi;
 EEG.etc.src.roi = hm.atlas.label;
+EEG.etc.src.lambda = lambda;
 EEG.etc.src.gamma = gamma;
 EEG.etc.src.indGamma = indGamma;
 EEG.etc.src.H = H;
