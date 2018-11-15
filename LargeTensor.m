@@ -6,19 +6,28 @@ classdef LargeTensor < handle
         file
     end
     methods
-        function self = LargeTensor(dims, filename)
+        function obj = LargeTensor(dims, filename)
             if nargin < 1, error('Tensor size is the first argument! Example:  a = LargeTensor([2,3,4]);');end
             if nargin < 2
                 filename = tempname;
             end
-            self.file = filename;
-            if ~exist(self.file,'file')
+            [fpath, fname] = fileparts(filename);
+            free = java.io.File(fpath).getFreeSpace();
+            req = prod(dims)*8;
+            if free > req
+                obj.file = filename;
+            elseif java.io.File(getHomeDir).getFreeSpace() > req
+                obj.file = fullfile(getHomeDir, fname);
+            else
+                error('No space left on device');
+            end
+            if ~exist(obj.file,'file')
                 try
-                    rt = system(['fallocate -l ' num2str(prod(dims)*8) ' ' self.file]);
+                    rt = system(['fallocate -l ' num2str(prod(dims)*8) ' ' obj.file]);
                     if rt ~=0, error('fallocate is not installed.');end
-                catch 
+                catch
                     disp('Creating mmf file...')
-                    fid = fopen(self.file,'w');
+                    fid = fopen(obj.file,'w');
                     z = zeros(prod(dims(setdiff(1:length(dims),2))),1);
                     for k=1:dims(2)
                         fwrite(fid, z, 'double');
@@ -27,19 +36,19 @@ classdef LargeTensor < handle
                     disp('done.')
                 end
             end
-            self.mmf = memmapfile(self.file,'Format',{'double' dims 'x'},'Writable',true);
+            obj.mmf = memmapfile(obj.file,'Format',{'double' dims 'x'},'Writable',true);
         end
-        function delete(self)
-            if exist(self.file,'file')
-                delete(self.file);
-                [p,n] = fileparts(self.file);
+        function delete(obj)
+            if exist(obj.file,'file')
+                delete(obj.file);
+                [p,n] = fileparts(obj.file);
                 hdr = fullfile(p,[n '.hdr']);
                 bin = fullfile(p,[n '.bin']);
                 if exist(hdr,'file'), delete(hdr);end
                 if exist(bin,'file'), delete(bin);end
             end
         end
-        function slice = subsref(self,s) %#ok
+        function slice = subsref(obj,s) %#ok
             ind = '';
             n = length(s.subs);
             for k=1:n
@@ -52,10 +61,10 @@ classdef LargeTensor < handle
                     ind(end+1) = ',';
                 end
             end
-            cmd = ['slice=self.mmf.Data.x(' ind ');'];
+            cmd = ['slice=obj.mmf.Data.x(' ind ');'];
             eval(cmd);
         end
-        function slice = subsasgn(self,s,value) %#ok
+        function slice = subsasgn(obj,s,value) %#ok
             ind = '';
             for k=1:length(s.subs)
                 if ischar(s.subs{k})
@@ -65,77 +74,85 @@ classdef LargeTensor < handle
                 end
             end
             ind(ind(1) == ',') = []; 
-            cmd = ['self.mmf.Data.x(' ind ') = value;'];
+            cmd = ['obj.mmf.Data.x(' ind ') = value;'];
             eval(cmd);
-            slice = self;
-            % slice = subsasgn(self.mmf.Data.x,s,value);
+            slice = obj;
+            % slice = subsasgn(obj.mmf.Data.x,s,value);
         end
-        function saveToFile(self,filename)
+        function saveToFile(obj,filename)
             [p,n] = fileparts(filename);
-            dims = size(self);
+            dims = size(obj);
             hdr = fullfile(p,[n '.hdr']);
             fid = fopen(hdr,'w');
             fprintf(fid,'[%s]',num2str(dims));
             fclose(fid);
             bin = fullfile(p,[n '.bin']);
-            copyfile(self.mmf.Filename,bin);
+            copyfile(obj.mmf.Filename,bin);
         end
         %%
-        function dims = size(self,d)
+        function dims = size(obj,d)
             if nargin <2, d = [];end
-            dims = self.mmf.Format{2};
+            dims = obj.mmf.Format{2};
             if ~isempty(d), dims = dims(d);end
         end
-        function self = reshape(self,dims)
-            self.mmf.Format{2} = dims;
+        function obj = reshape(obj,dims)
+            obj.mmf.Format{2} = dims;
         end
-        function self = minus(self,value)
-            self.mmf.Data.x = self.mmf.Data.x - value.mmf.Data.x;
+        function obj = minus(obj,value)
+            obj.mmf.Data.x = obj.mmf.Data.x - value.mmf.Data.x;
         end
-        function self = plus(self,value)
-            self.mmf.Data.x = self.mmf.Data.x + value.mmf.Data.x;
+        function obj = plus(obj,value)
+            obj.mmf.Data.x = obj.mmf.Data.x + value.mmf.Data.x;
         end
-        function self = times(self,value)
-            self.mmf.Data.x = self.mmf.Data.x.*value.mmf.Data.x;
+        function obj = times(obj,value)
+            obj.mmf.Data.x = obj.mmf.Data.x.*value.mmf.Data.x;
         end
-        function self = power(self,value)
-            self.mmf.Data.x = self.mmf.Data.x.^value;
+        function obj = power(obj,value)
+            obj.mmf.Data.x = obj.mmf.Data.x.^value;
         end
-        function self = sqrt(self)
-            self.mmf.Data.x = sqrt(self.mmf.Data.x);
+        function obj = sqrt(obj)
+            obj.mmf.Data.x = sqrt(obj.mmf.Data.x);
         end
-        function self = mtimes(self,value)
+        function obj = mtimes(obj,value)
             % Handle the multiplication by a matrix on the left
-            if isa(value,'LargeTensor') && ~isa(self,'LargeTensor')
-                tmp = self;
-                self = value;
+            if isa(value,'LargeTensor') && ~isa(obj,'LargeTensor')
+                tmp = obj;
+                obj = value;
                 value = tmp;
                 clear tmp;
-                self = value*self.mmf.Data.x;
+                obj = value*obj.mmf.Data.x;
                 return
             end
-            if ~isa(value,class(self))
-                self.mmf.Data.x = self.mmf.Data.x*value;
+            if ~isa(value,class(obj))
+                obj.mmf.Data.x = obj.mmf.Data.x*value;
             else
-                self.mmf.Data.x = self.mmf.Data.x.*value.mmf.Data.x;
+                obj.mmf.Data.x = obj.mmf.Data.x.*value.mmf.Data.x;
             end
         end
-        function self = mrdivide(self,value)
-            if ~isa(value,class(self))
-                self.mmf.Data.x = self.mmf.Data.x/value;
+        function obj = mrdivide(obj,value)
+            if ~isa(value,class(obj))
+                obj.mmf.Data.x = obj.mmf.Data.x/value;
             else
-                self.mmf.Data.x = self.mmf.Data.x/value.mmf.Data.x;
+                obj.mmf.Data.x = obj.mmf.Data.x/value.mmf.Data.x;
             end
         end
     end
     methods(Static)
-        function self = loadFromFile(filename)
+        function obj = loadFromFile(filename)
             [p,n] = fileparts(filename);
             hdr = fullfile(p,[n '.hdr']);
             bin = fullfile(p,[n '.bin']);
             fid = fopen(hdr,'r');
             dims = eval(fgets(fid));
-            self = LargeTensor(dims,bin);
+            obj = LargeTensor(dims,bin);
         end
     end
+end
+
+function homeDir = getHomeDir
+if ispc
+    homeDir= getenv('USERPROFILE');
+else
+    homeDir = getenv('HOME');
+end
 end
