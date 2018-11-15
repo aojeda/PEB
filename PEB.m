@@ -251,7 +251,9 @@ classdef PEB < handle
             try
                 iSy = invChol_mex(double(Sy));
             catch ME
-                warning(ME.message)
+                if ~strcmp(ME.identifier,'MATLAB:invChol_mex:iscomplex')    
+                    warning(ME.message);
+                end
                 if strcmp(ME.identifier,'MATLAB:invChol_mex:dpotrf:notposdef')
                     warning('Possibly the data is rank deficient!')
                 end
