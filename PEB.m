@@ -137,6 +137,12 @@ classdef PEB < handle
         function init(obj)
             obj.lambdaBuffer = nan(size(obj.lambdaBuffer));
         end
+        
+        function logE = calculateLogEvidence(obj,Cy,lambda,gamma, indices)
+            if nargin < 5, indices = 1:obj.Ng;end
+            [Sy, iSy] = calculateModelCov(obj, lambda, gamma, indices);
+            logE = (-1/2)*(trace(Cy*iSy) + PEB.logDet(Sy));
+        end
     end
     methods(Access=private)
         %%
@@ -235,12 +241,6 @@ classdef PEB < handle
                 end
                 if diff(history.logE(history.pointer-1:history.pointer)) < options.maxTol, break;end
             end
-        end
-        
-        %%
-        function logE = calculateLogEvidence(obj,Cy,lambda,gamma)
-            [Sy, iSy] = calculateModelCov(obj,lambda,gamma);
-            logE = (-1/2)*(trace(Cy*iSy) + PEB.logDet(Sy));
         end
         
         %%
