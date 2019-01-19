@@ -1,4 +1,4 @@
-function EEG = pop_inverseSolution(EEG, windowSize, overlaping, solverType, saveFull, account4artifacts, postprocCallback)
+function EEG = pop_inverseSolution(EEG, windowSize, overlaping, solverType, saveFull, account4artifacts, postprocCallback, src2roiReductionType)
 persistent solver
 
 if nargin < 1, error('Not enough input arguments.');end
@@ -35,6 +35,7 @@ if ~islogical(account4artifacts)
     account4artifacts= true;
 end
 if nargin < 7, postprocCallback = [];end
+if nargin < 8, src2roiReductionType = 'unbiased';end
 overlaping = overlaping/100;
 
 % Load the head model
@@ -123,6 +124,7 @@ logE = zeros([length(1:windowSize:EEG.pnts),EEG.trials]);
 lambda = zeros([length(1:windowSize:EEG.pnts),EEG.trials]);
 gamma = zeros([solver.Ng,length(1:windowSize:EEG.pnts),EEG.trials]);
 indGamma = EEG.times(1:windowSize:EEG.pnts);
+b = filterDesign(EEG.srate,round(EEG.srate/10));
 
 % Perform source estimation
 fprintf('PEB source estimation...\n');
@@ -136,13 +138,13 @@ for trial=1:EEG.trials
         loc(loc>EEG.pnts) = [];
         if isempty(loc), break;end
         if length(loc) < windowSize
-            [X(:,loc(1):EEG.pnts,trial),lambda(:,c,trial),~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
+            [X(:,loc(1):EEG.pnts,trial),lambda(c,trial),~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc(1):end,trial), [],[],options);
             break;
         end
         
         
         % Source estimation
-        [Xtmp,lambda(:,c,trial),~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
+        [Xtmp,lambda(c,trial),~,gamma(:,c,trial), logE(c,trial)] = solver.update(EEG.data(:,loc,trial),[],[],options);
         
         % Stitch windows
         if k>1 && windowSize > 1
@@ -166,7 +168,8 @@ for trial=1:EEG.trials
     end
     
     % Compute average ROI time series
-    X_roi(:,:,trial) = computeSourceROI(X, indG, trial, P, isVect);
+    X_roi(:,:,trial) = computeSourceROI(X, indG, trial, P, isVect, src2roiReductionType);
+    X_roi(:,:,trial) = filtfilt(b,1,X_roi(:,:,trial)')';
     
     % Data cleaning
     EEG.data(:,:,trial) = cleanData(H, X, indG, trial);
@@ -182,6 +185,7 @@ EEG.etc.src.H = H;
 EEG.etc.src.indG = indG;
 EEG.etc.src.indV = indV;
 EEG.etc.src.logE = logE;
+EEG.etc.src.solver = solver;
 fprintf('done\n');
 
 if saveFull
@@ -216,25 +220,45 @@ end
 end
 
 %%
-function x_roi = computeSourceROI(X, indG, trial, P, isVect)
-try
-    x = X(indG,:, trial);
-    if isVect
-        x_roi = sqrt(P*(x.^2));
-    else
-        x_roi = P*x;
-    end
-catch
-    n = size(X,2);
-    x_roi = zeros(size(P,1),n);
-    delta = min([1024 round(n/100)]);
-    for k=1:delta:n
-        ind = k:k+delta-1;
-        ind(ind>n) = [];
+function x_roi = computeSourceROI(X, indG, trial, P, isVect, src2roiReductionType)
+Nt = size(X,2);
+Nroi = size(P,1);
+x_roi = zeros(Nroi,Nt);
+blocks = P~=0;
+if strcmp(src2roiReductionType,'mean')
+    try
+        x = X(indG,:, trial);
         if isVect
-            x_roi(:,ind) = sqrt(P*(X(indG,ind, trial).^2));
+            x_roi = sqrt(P*(x.^2));
         else
-            x_roi = P*X(indG,ind, trial);
+            x_roi = P*x;
+        end
+    catch
+        delta = min([1024 round(Nt/100)]);
+        for k=1:delta:Nt
+            ind = k:k+delta-1;
+            ind(ind>Nt) = [];
+            if isVect
+                x_roi(:,ind) = sqrt(P*(X(indG,ind, trial).^2));
+            else
+                x_roi(:,ind) = P*X(indG,ind, trial);
+            end
+        end
+    end
+elseif strcmp(src2roiReductionType,'unbiased')
+    delta = 5;
+    for r=1:Nroi
+        for k=1:delta:Nt
+            ind = k:k+delta-1;
+            ind(ind>Nt) = [];
+            if isVect
+                xv = abs(X(indG(blocks(r,:)),ind, trial));
+            else
+                xv = X(indG(blocks(r,:)),ind, trial);
+            end
+            [fx, xi] = ksdensity(xv(:));
+            Px = griddedInterpolant(xi,fx/sum(fx));
+            x_roi(r,ind) = sum(reshape(xv(:).*Px(xv(:)),size(xv)));
         end
     end
 end
